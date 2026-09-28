@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>パスカルの三角錐（直角三角錐）</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f3f4f6; font-family: sans-serif; }
+        #info { position: absolute; top: 15px; left: 15px; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 8px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 280px; }
+        #info h3 { margin: 0 0 5px 0; font-size: 15px; color: #1f2937; }
+        #info p { margin: 0; font-size: 12px; color: #4b5563; line-height: 1.4; }
+        #ui-panel { position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.95); padding: 15px 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 8px; width: 360px; }
+        .control-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+        label { font-size: 12px; font-weight: bold; color: #374151; min-width: 90px; }
+        input[type="range"] { flex-grow: 1; margin: 0; }
+        .val-span { font-size: 12px; font-weight: bold; color: #2563eb; min-width: 45px; text-align: right; }
+        .section-title { font-size: 11px; color: #9ca3af; border-bottom: 1px solid #e5e7eb; margin: 4px 0 2px 0; padding-bottom: 2px; font-weight: bold; }
+
+        .step-btn {
+            background-color: #ffffff;
+            border: 1px solid #d1d5db;
+            color: #374151;
+            font-size: 14px;
+            font-weight: bold;
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .step-btn:active {
+            background-color: #e5e7eb;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="info">
+        <h3>パスカルの三角錐（直角三角錐）</h3>
+        <p>頂点で3辺が直交（側面は直角二等辺三角形、底面は正三角形）<br>● ドラッグ：カメラ回転<br>● スクロール：ズーム</p>
+    </div>
+    <div id="ui-panel">
+        <div class="control-row">
+            <label for="layerRange">階層の上限 (n): </label>
+            <button class="step-btn" onclick="stepAdjust('layerRange', -1)">-</button>
+            <input type="range" id="layerRange" min="0" max="10" value="5" step="1">
+            <button class="step-btn" onclick="stepAdjust('layerRange', 1)">+</button>
+            <span id="layerVal" class="val-span">5</span>
+        </div>
+        <div class="section-title">スライサーの角度（2軸合成）</div>
+        <div class="control-row">
+            <label for="angleX">X軸まわりの回転: </label>
+            <button class="step-btn" onclick="stepAdjust('angleX', -1)">-</button>
+            <input type="range" id="angleX" min="-180" max="180" value="0.0" step="0.5">
+            <button class="step-btn" onclick="stepAdjust('angleX', 1)">+</button>
+            <span id="valX" class="val-span">0.0°</span>
+        </div>
+        <div class="control-row">
+            <label for="angleY">Y軸まわりの回転: </label>
+            <button class="step-btn" onclick="stepAdjust('angleY', -1)">-</button>
+            <input type="range" id="angleY" min="-180" max="180" value="0.0" step="0.5">
+            <button class="step-btn" onclick="stepAdjust('angleY', 1)">+</button>
+            <span id="valY" class="val-span">0.0°</span>
+        </div>
+        <div class="section-title">スライサーの位置</div>
+        <div class="control-row">
+            <label for="sliceDepth">削る深さ位置: </label>
+            <button class="step-btn" onclick="stepAdjust('sliceDepth', -1)">-</button>
+            <input type="range" id="sliceDepth" min="0" max="100" value="30.0" step="0.25">
+            <button class="step-btn" onclick="stepAdjust('sliceDepth', 1)">+</button>
+            <span id="depthVal" class="val-span">30.0%</span>
+        </div>
+    </div>
+    <script>
+        const memo = [];
+        function fact(num) {
+            if (num <= 1) return 1;
+            if (memo[num]) return memo[num];
+            let res = 1; for(let i = 2; i <= num; i++) res *= i;
+            memo[num] = res; return res;
+        }
+        function trinomial(n, i, j, k) {
+            return fact(n) / (fact(i) * fact(j) * fact(k));
+        }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf3f4f6);
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 4, 18);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.localClippingEnabled = true;
+        document.body.appendChild(renderer.domElement);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; controls.dampingFactor = 0.05;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6); dirLight.position.set(10, 20, 10); scene.add(dirLight);
+
+        const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+
+        const currentPlane = new THREE.Plane();
+
+        const spriteCache = {};
+        function getCachedSprite(text) {
+            if (spriteCache[text]) return spriteCache[text].clone();
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+            const base = 8;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath(); ctx.arc(64 * base, 64 * base, 50 * base, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = 5 * base; ctx.strokeStyle = '#1e3a8a'; ctx.stroke();
+            let fontSize = 44 * base;
+            if (text.length > 2) fontSize = 32 * base;
+            if (text.length > 4) fontSize = 24 * base;
+            ctx.fillStyle = '#000000'; ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, 64 * base, 64 * base);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter;
+            if (maxAnisotropy > 0) texture.anisotropy = maxAnisotropy;
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(0.45, 0.45, 0.45);
+            spriteCache[text] = sprite;
+            return sprite.clone();
+        }
+
+        let meshGroup = new THREE.Group();
+        let spriteGroup = new THREE.Group();
+        scene.add(meshGroup);
+        scene.add(spriteGroup);
+
+        const slicePlaneGeo = new THREE.PlaneGeometry(1, 1);
+        const slicePlaneMat = new THREE.MeshBasicMaterial({ color: 0xef4444, opacity: 0.16, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+        const slicePlaneMesh = new THREE.Mesh(slicePlaneGeo, slicePlaneMat);
+        const sliceEdges = new THREE.EdgesGeometry(slicePlaneGeo);
+        const sliceLineMat = new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.5 });
+        const sliceLine = new THREE.LineSegments(sliceEdges, sliceLineMat);
+        scene.add(slicePlaneMesh);
+        scene.add(sliceLine);
+
+        // ===== 直角三角錐（頂点で3辺が直交）の幾何 =====
+        // 3本の直交する辺ベクトル a, b, c（長さはすべて spacing）を、
+        // a+b+c が真下(-y)を向くように配置する。
+        //   各ベクトルの鉛直成分   : -spacing/√3
+        //   各ベクトルの水平成分の長さ: spacing*√(2/3)（水平面内で120°ずつ）
+        // → 各階層 (i+j+k=n) は水平な正三角形になり、a·b = 0 が成り立つ。
+        const spacing = 1.2;
+        const heightFactor = spacing / Math.sqrt(3);          // 1階層あたりの高さ
+        const horizR = spacing * Math.sqrt(2 / 3);            // 水平成分の長さ
+        const uA = new THREE.Vector2(0, 1);                   // (x, z) 方向の単位ベクトル
+        const uB = new THREE.Vector2(-Math.sqrt(3) / 2, -0.5);
+        const uC = new THREE.Vector2(Math.sqrt(3) / 2, -0.5);
+
+        let currentMaxLayer = -1;
+        let sliceRadius = 1;
+
+        function rebuildGeometry() {
+            const maxLayer = parseInt(document.getElementById('layerRange').value);
+            if (maxLayer === currentMaxLayer) return;
+            currentMaxLayer = maxLayer;
+
+            while(meshGroup.children.length > 0){ meshGroup.remove(meshGroup.children[0]); }
+            while(spriteGroup.children.length > 0){ spriteGroup.remove(spriteGroup.children[0]); }
+
+            const totalHeight = maxLayer * heightFactor; const yOffset = totalHeight / 4; // 重心を原点付近へ
+
+            function getNodePosition(n, i, j, k) {
+                const y = (maxLayer - n) * heightFactor - yOffset;
+                const x = horizR * (i * uA.x + j * uB.x + k * uC.x);
+                const z = horizR * (i * uA.y + j * uB.y + k * uC.y);
+                return new THREE.Vector3(x, y, z);
+            }
+
+            for (let n = 1; n <= maxLayer; n++) {
+                const pA = getNodePosition(n, n, 0, 0); const pB = getNodePosition(n, 0, n, 0); const pC = getNodePosition(n, 0, 0, n);
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([pA.x, pA.y, pA.z, pB.x, pB.y, pB.z, pC.x, pC.y, pC.z]), 3));
+                const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x3b82f6, opacity: 0.12, transparent: true, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [currentPlane] }));
+                meshGroup.add(mesh);
+                const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0.3, clippingPlanes: [currentPlane] }));
+                meshGroup.add(line);
+            }
+
+            const vTop = getNodePosition(0, 0, 0, 0);
+            const vBottomA = getNodePosition(maxLayer, maxLayer, 0, 0);
+            if (maxLayer >= 1) {
+                const vBottomB = getNodePosition(maxLayer, 0, maxLayer, 0); const vBottomC = getNodePosition(maxLayer, 0, 0, maxLayer);
+                const outerGeometry = new THREE.BufferGeometry();
+                outerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+                    vBottomA.x, vBottomA.y, vBottomA.z, vBottomB.x, vBottomB.y, vBottomB.z, vBottomC.x, vBottomC.y, vBottomC.z,
+                    vTop.x, vTop.y, vTop.z, vBottomA.x, vBottomA.y, vBottomA.z, vBottomB.x, vBottomB.y, vBottomB.z,
+                    vTop.x, vTop.y, vTop.z, vBottomB.x, vBottomB.y, vBottomB.z, vBottomC.x, vBottomC.y, vBottomC.z,
+                    vTop.x, vTop.y, vTop.z, vBottomC.x, vBottomC.y, vBottomC.z, vBottomA.x, vBottomA.y, vBottomA.z,
+                ]), 3));
+                outerGeometry.computeVertexNormals();
+                meshGroup.add(new THREE.Mesh(outerGeometry, new THREE.MeshPhongMaterial({ color: 0x1d4ed8, opacity: 0.05, transparent: true, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [currentPlane] })));
+                meshGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(outerGeometry), new THREE.LineBasicMaterial({ color: 0x1e4ea8, transparent: true, opacity: 0.3, clippingPlanes: [currentPlane] })));
+            }
+
+            // 原点（重心付近）から最も遠い頂点までの距離をスライサー半径の基準にする
+            sliceRadius = Math.max(vTop.length(), vBottomA.length(), 1) * 1.3;
+            slicePlaneMesh.scale.set(sliceRadius * 2.5, sliceRadius * 2.5, 1);
+            sliceLine.scale.set(sliceRadius * 2.5, sliceRadius * 2.5, 1);
+
+            for (let n = 0; n <= maxLayer; n++) {
+                for (let i = 0; i <= n; i++) {
+                    for (let j = 0; j <= n - i; j++) {
+                        const k = n - i - j;
+                        const pos = getNodePosition(n, i, j, k);
+                        const val = trinomial(n, i, j, k);
+                        const sprite = getCachedSprite(val.toString());
+                        sprite.position.copy(pos);
+                        sprite.renderOrder = 2;
+                        spriteGroup.add(sprite);
+                    }
+                }
+            }
+        }
+
+        function updateSlice() {
+            rebuildGeometry();
+
+            const degX = parseFloat(document.getElementById('angleX').value);
+            const degY = parseFloat(document.getElementById('angleY').value);
+            const depthPercent = parseFloat(document.getElementById('sliceDepth').value);
+
+            const maxRadius = sliceRadius;
+            const constant = maxRadius - (depthPercent / 100) * (maxRadius * 2);
+
+            const rotationEuler = new THREE.Euler((degX * Math.PI) / 180, (degY * Math.PI) / 180, 0, 'XYZ');
+            let normal = new THREE.Vector3(0, 0, 1).applyEuler(rotationEuler).normalize();
+
+            slicePlaneMesh.rotation.copy(rotationEuler);
+            slicePlaneMesh.position.copy(normal).multiplyScalar(constant);
+            sliceLine.rotation.copy(rotationEuler);
+            sliceLine.position.copy(slicePlaneMesh.position);
+
+            currentPlane.set(new THREE.Vector3().copy(normal).negate(), constant);
+
+            spriteGroup.children.forEach(sprite => {
+                const sliced = sprite.position.dot(normal) > constant;
+                sprite.visible = !sliced;
+            });
+        }
+
+        function stepAdjust(id, direction) {
+            const el = document.getElementById(id);
+            const min = parseFloat(el.min);
+            const max = parseFloat(el.max);
+            const step = parseFloat(el.step || 1);
+
+            let newVal = parseFloat(el.value) + (direction * step);
+
+            const precision = step.toString().includes('.') ? step.toString().split('.')[1].length : 0;
+            newVal = parseFloat(newVal.toFixed(precision));
+
+            if (newVal < min) newVal = min;
+            if (newVal > max) newVal = max;
+
+            el.value = newVal;
+            updateUIValues();
+            updateSlice();
+        }
+
+        document.getElementById('layerRange').addEventListener('input', () => { updateUIValues(); updateSlice(); });
+        ['angleX', 'angleY', 'sliceDepth'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => { updateUIValues(); updateSlice(); });
+        });
+
+        function updateUIValues() {
+            document.getElementById('layerVal').innerText = document.getElementById('layerRange').value;
+
+            const xVal = parseFloat(document.getElementById('angleX').value).toFixed(1);
+            const yVal = parseFloat(document.getElementById('angleY').value).toFixed(1);
+            const dVal = parseFloat(document.getElementById('sliceDepth').value).toFixed(1);
+
+            document.getElementById('valX').innerText = xVal + '°';
+            document.getElementById('valY').innerText = yVal + '°';
+            document.getElementById('depthVal').innerText = dVal + '%';
+        }
+
+        updateUIValues();
+        updateSlice();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
