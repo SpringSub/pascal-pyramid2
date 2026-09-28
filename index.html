@@ -15,6 +15,9 @@
         .val-span { font-size: 12px; font-weight: bold; color: #2563eb; min-width: 45px; text-align: right; }
         .section-title { font-size: 11px; color: #9ca3af; border-bottom: 1px solid #e5e7eb; margin: 4px 0 2px 0; padding-bottom: 2px; font-weight: bold; }
 
+        .eq-input.invalid { border-color: #ef4444; background: #fef2f2; }
+        .eq-input { width: 60px; padding: 4px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 6px; text-align: center; }
+        .eq-label { font-size: 13px; font-weight: bold; color: #374151; }
         .step-btn {
             background-color: #ffffff;
             border: 1px solid #d1d5db;
@@ -36,12 +39,12 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TrackballControls.js"></script>
 </head>
 <body>
     <div id="info">
         <h3>パスカルの三角錐（直角三角錐）</h3>
-        <p>頂点で3辺が直交（側面は直角二等辺三角形、底面は正三角形）<br>● ドラッグ：カメラ回転<br>● スクロール：ズーム</p>
+        <p>頂点で3辺が直交（側面は直角二等辺三角形、底面は正三角形）<br>● 左ドラッグ：回転（制限なし）<br>● 右ドラッグ：移動<br>● スクロール：ズーム（制限なし）<br>● 頂点が原点、3辺が x・y・z 軸<br>● 平面 ax+by+cz=d を直接入力してスライス</p>
     </div>
     <div id="ui-panel">
         <div class="control-row">
@@ -51,29 +54,22 @@
             <button class="step-btn" onclick="stepAdjust('layerRange', 1)">+</button>
             <span id="layerVal" class="val-span">5</span>
         </div>
-        <div class="section-title">スライサーの角度（2軸合成）</div>
-        <div class="control-row">
-            <label for="angleX">X軸まわりの回転: </label>
-            <button class="step-btn" onclick="stepAdjust('angleX', -1)">-</button>
-            <input type="range" id="angleX" min="-180" max="180" value="0.0" step="0.5">
-            <button class="step-btn" onclick="stepAdjust('angleX', 1)">+</button>
-            <span id="valX" class="val-span">0.0°</span>
+        <div class="section-title">スライス平面の方程式（頂点が原点、3辺が x・y・z 軸）</div>
+        <div class="control-row" style="justify-content:center; gap:4px;">
+            <input type="text" id="planeA" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">x +</span>
+            <input type="text" id="planeB" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">y +</span>
+            <input type="text" id="planeC" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">z =</span>
+            <input type="text" id="planeD" class="eq-input" value="3" autocomplete="off" spellcheck="false">
         </div>
         <div class="control-row">
-            <label for="angleY">Y軸まわりの回転: </label>
-            <button class="step-btn" onclick="stepAdjust('angleY', -1)">-</button>
-            <input type="range" id="angleY" min="-180" max="180" value="0.0" step="0.5">
-            <button class="step-btn" onclick="stepAdjust('angleY', 1)">+</button>
-            <span id="valY" class="val-span">0.0°</span>
+            <label for="planeSide">削る側: </label>
+            <select id="planeSide" style="flex-grow:1; padding:3px; font-size:12px;">
+                <option value="gt">ax+by+cz &gt; d の側を削る</option>
+                <option value="lt">ax+by+cz &lt; d の側を削る</option>
+            </select>
         </div>
-        <div class="section-title">スライサーの位置</div>
-        <div class="control-row">
-            <label for="sliceDepth">削る深さ位置: </label>
-            <button class="step-btn" onclick="stepAdjust('sliceDepth', -1)">-</button>
-            <input type="range" id="sliceDepth" min="0" max="100" value="30.0" step="0.25">
-            <button class="step-btn" onclick="stepAdjust('sliceDepth', 1)">+</button>
-            <span id="depthVal" class="val-span">30.0%</span>
-        </div>
+        <div id="eqText" style="font-size:12px; color:#2563eb; font-weight:bold; text-align:center;"></div>
+        <div style="font-size:11px; color:#6b7280; line-height:1.4;">各頂点 (n, i, j, k) は座標 (x, y, z) = (i, j, k) に対応します。<br>係数は整数・小数・分数（例: 1/2, -3/4, 0.5）で入力できます。<br>例: x=2 → 1,0,0 と d=2 ／ 階層 n → 1,1,1 と d=n ／ x+y=z/2 → 1,1,-1/2, d=0</div>
     </div>
     <script>
         const memo = [];
@@ -89,15 +85,31 @@
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf3f4f6);
-        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.01, 100000);
         camera.position.set(0, 4, 18);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.localClippingEnabled = true;
         document.body.appendChild(renderer.domElement);
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; controls.dampingFactor = 0.05;
+        // TrackballControls：上下の回転制限（真上・真下で止まる制限）がなく、どの向きにも自由に回せる
+        const controls = new THREE.TrackballControls(camera, renderer.domElement);
+        controls.rotateSpeed = 2.5;
+        controls.zoomSpeed = 1.2;
+        controls.panSpeed = 0.1;   // 右ドラッグ（平行移動）の感度。小さいほどゆっくり動く
+        controls.staticMoving = false;
+        controls.dynamicDampingFactor = 0.12;
+        controls.minDistance = 0;          // ズームの下限なし
+        controls.maxDistance = Infinity;   // ズームの上限なし
+
+        // 三角錐を画面の右上寄りに表示（値を変えると位置を調整できます）
+        const VIEW_SHIFT_X = 0.10;  // 右へずらす割合（画面幅に対して）
+        const VIEW_SHIFT_Y = 0.12;  // 上へずらす割合（画面高さに対して）
+        function applyViewOffset() {
+            const w = window.innerWidth, h = window.innerHeight;
+            camera.setViewOffset(w, h, -w * VIEW_SHIFT_X, h * VIEW_SHIFT_Y, w, h);
+        }
+        applyViewOffset();
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); scene.add(ambientLight);
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.6); dirLight.position.set(10, 20, 10); scene.add(dirLight);
@@ -134,8 +146,10 @@
 
         let meshGroup = new THREE.Group();
         let spriteGroup = new THREE.Group();
+        let axisGroup = new THREE.Group();
         scene.add(meshGroup);
         scene.add(spriteGroup);
+        scene.add(axisGroup);
 
         const slicePlaneGeo = new THREE.PlaneGeometry(1, 1);
         const slicePlaneMat = new THREE.MeshBasicMaterial({ color: 0xef4444, opacity: 0.16, transparent: true, side: THREE.DoubleSide, depthWrite: false });
@@ -159,6 +173,12 @@
         const uB = new THREE.Vector2(-Math.sqrt(3) / 2, -0.5);
         const uC = new THREE.Vector2(Math.sqrt(3) / 2, -0.5);
 
+        // 格子座標 (x,y,z)=(i,j,k) → ワールド座標：P = apex + x*LA + y*LB + z*LC
+        const LA = new THREE.Vector3(horizR * uA.x, -heightFactor, horizR * uA.y);
+        const LB = new THREE.Vector3(horizR * uB.x, -heightFactor, horizR * uB.y);
+        const LC = new THREE.Vector3(horizR * uC.x, -heightFactor, horizR * uC.y);
+        let apexY = 0;
+
         let currentMaxLayer = -1;
         let sliceRadius = 1;
 
@@ -169,11 +189,13 @@
 
             while(meshGroup.children.length > 0){ meshGroup.remove(meshGroup.children[0]); }
             while(spriteGroup.children.length > 0){ spriteGroup.remove(spriteGroup.children[0]); }
+            while(axisGroup.children.length > 0){ axisGroup.remove(axisGroup.children[0]); }
 
-            const totalHeight = maxLayer * heightFactor; const yOffset = totalHeight / 4; // 重心を原点付近へ
+            const totalHeight = maxLayer * heightFactor;
+            apexY = 0; // 頂点(n=0)がワールド原点
 
             function getNodePosition(n, i, j, k) {
-                const y = (maxLayer - n) * heightFactor - yOffset;
+                const y = -n * heightFactor; // 頂点が y=0、下の階層ほど下へ
                 const x = horizR * (i * uA.x + j * uB.x + k * uC.x);
                 const z = horizR * (i * uA.y + j * uB.y + k * uC.y);
                 return new THREE.Vector3(x, y, z);
@@ -205,8 +227,46 @@
                 meshGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(outerGeometry), new THREE.LineBasicMaterial({ color: 0x1e4ea8, transparent: true, opacity: 0.3, clippingPlanes: [currentPlane] })));
             }
 
-            // 原点（重心付近）から最も遠い頂点までの距離をスライサー半径の基準にする
-            sliceRadius = Math.max(vTop.length(), vBottomA.length(), 1) * 1.3;
+            // ===== x・y・z 軸（頂点＝原点を中心に、3辺の方向へ薄く表示）=====
+            const axisDefs = [
+                { dir: LA, color: 0xf97316, css: '#f97316', name: 'x' },
+                { dir: LB, color: 0x16a34a, css: '#16a34a', name: 'y' },
+                { dir: LC, color: 0x9333ea, css: '#9333ea', name: 'z' },
+            ];
+            const posLen = (maxLayer + 1.5) / 1;   // 格子単位での正方向の長さ
+            const negLen = 1.5;                    // 負方向は短めに
+            axisDefs.forEach(ax => {
+                const unit = ax.dir.clone().divideScalar(spacing);   // 単位ベクトル
+                const pPos = unit.clone().multiplyScalar(posLen * spacing);
+                const pNeg = unit.clone().multiplyScalar(-negLen * spacing);
+                const mkLine = (p1, p2, op) => new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([p1, p2]),
+                    new THREE.LineBasicMaterial({ color: ax.color, transparent: true, opacity: op, depthTest: false }));
+                const l1 = mkLine(new THREE.Vector3(0, 0, 0), pPos, 0.4); l1.renderOrder = 1;
+                const l2 = mkLine(new THREE.Vector3(0, 0, 0), pNeg, 0.18); l2.renderOrder = 1;
+                axisGroup.add(l1); axisGroup.add(l2);
+                // 軸ラベル（正方向の先端）
+                const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+                const cx = cv.getContext('2d');
+                cx.fillStyle = ax.css; cx.font = 'italic bold 84px serif';
+                cx.textAlign = 'center'; cx.textBaseline = 'middle';
+                cx.fillText(ax.name, 64, 68);
+                const lab = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, opacity: 0.75, depthTest: false }));
+                lab.position.copy(pPos).add(unit.clone().multiplyScalar(0.4));
+                lab.scale.set(0.7, 0.7, 0.7); lab.renderOrder = 3;
+                axisGroup.add(lab);
+            });
+
+            // 三角錐全体（重心）が画面中心に来るよう、カメラの注視点を移動（相対的な視点は維持）
+            // 注視点は「重心から x 成分を除いた点」= 格子座標 (0, n/4, n/4)。
+            // y-z 平面上にあるので、視線が y-z 平面内に入り、y軸とz軸が画面上で同じ縦線に揃う。
+            const newTarget = new THREE.Vector3()
+                .addScaledVector(LB, maxLayer / 4).addScaledVector(LC, maxLayer / 4);
+            camera.position.add(newTarget.clone().sub(controls.target));
+            controls.target.copy(newTarget);
+
+            // 原点（頂点）から最も遠い頂点までの距離をスライサー半径の基準にする
+            sliceRadius = Math.max(vBottomA.length(), 1) * 1.3;
             slicePlaneMesh.scale.set(sliceRadius * 2.5, sliceRadius * 2.5, 1);
             sliceLine.scale.set(sliceRadius * 2.5, sliceRadius * 2.5, 1);
 
@@ -225,29 +285,72 @@
             }
         }
 
+        // 整数・小数・分数（"1/2", "-3/4", "0.5/2", 全角も可）を数値に変換。不正なら null
+        function parseFraction(str) {
+            let t = str.trim()
+                .replace(/[／÷]/g, '/').replace(/[−－ー]/g, '-').replace(/＋/g, '+').replace(/．/g, '.')
+                .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+            const m = t.match(/^([+-]?)\s*(\d+(?:\.\d*)?|\.\d+)\s*(?:\/\s*(\d+(?:\.\d*)?|\.\d+))?$/);
+            if (!m) return null;
+            let v = parseFloat(m[2]);
+            if (m[3] !== undefined) {
+                const den = parseFloat(m[3]);
+                if (den === 0) return null;
+                v /= den;
+            }
+            if (m[1] === '-') v = -v;
+            return { value: v, text: (m[1] === '-' ? '-' : '') + m[2] + (m[3] !== undefined ? '/' + m[3] : '') };
+        }
+
+        // 入力欄の値を読む。不正な場合は赤枠にして直前の有効値を使う
+        function readNum(id) {
+            const el = document.getElementById(id);
+            const r = parseFraction(el.value);
+            if (r === null) {
+                el.classList.add('invalid');
+                return el.dataset.val !== undefined ? parseFloat(el.dataset.val) : 0;
+            }
+            el.classList.remove('invalid');
+            el.dataset.val = r.value; el.dataset.txt = r.text;
+            return r.value;
+        }
+        function coefText(id) { return document.getElementById(id).dataset.txt || '0'; }
+
         function updateSlice() {
             rebuildGeometry();
 
-            const degX = parseFloat(document.getElementById('angleX').value);
-            const degY = parseFloat(document.getElementById('angleY').value);
-            const depthPercent = parseFloat(document.getElementById('sliceDepth').value);
+            const pa = readNum('planeA'), pb = readNum('planeB'), pc = readNum('planeC'), pd = readNum('planeD');
+            const removeGreater = document.getElementById('planeSide').value === 'gt';
 
-            const maxRadius = sliceRadius;
-            const constant = maxRadius - (depthPercent / 100) * (maxRadius * 2);
+            // 格子座標での勾配 (a,b,c) をワールド座標の法線へ変換（LA,LB,LC は直交・長さ spacing）
+            const N = new THREE.Vector3()
+                .addScaledVector(LA, pa).addScaledVector(LB, pb).addScaledVector(LC, pc)
+                .divideScalar(spacing * spacing);
+            const len = N.length();
 
-            const rotationEuler = new THREE.Euler((degX * Math.PI) / 180, (degY * Math.PI) / 180, 0, 'XYZ');
-            let normal = new THREE.Vector3(0, 0, 1).applyEuler(rotationEuler).normalize();
+            if (len < 1e-9) { // a=b=c=0：平面が定まらないのでスライスなし
+                slicePlaneMesh.visible = false; sliceLine.visible = false;
+                currentPlane.set(new THREE.Vector3(0, -1, 0), 1e6);
+                spriteGroup.children.forEach(sprite => { sprite.visible = true; });
+                return;
+            }
+            slicePlaneMesh.visible = true; sliceLine.visible = true;
 
-            slicePlaneMesh.rotation.copy(rotationEuler);
+            // f(P) = a x + b y + c z = N·(P - apex)。f > d ⇔ n·P > constant
+            let normal = N.clone().divideScalar(len);
+            let constant = (pd + N.y * apexY) / len;
+            if (!removeGreater) { normal.negate(); constant = -constant; }
+
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            slicePlaneMesh.quaternion.copy(q);
             slicePlaneMesh.position.copy(normal).multiplyScalar(constant);
-            sliceLine.rotation.copy(rotationEuler);
+            sliceLine.quaternion.copy(q);
             sliceLine.position.copy(slicePlaneMesh.position);
 
             currentPlane.set(new THREE.Vector3().copy(normal).negate(), constant);
 
             spriteGroup.children.forEach(sprite => {
-                const sliced = sprite.position.dot(normal) > constant;
-                sprite.visible = !sliced;
+                sprite.visible = !(sprite.position.dot(normal) > constant + 1e-6);
             });
         }
 
@@ -271,28 +374,56 @@
         }
 
         document.getElementById('layerRange').addEventListener('input', () => { updateUIValues(); updateSlice(); });
-        ['angleX', 'angleY', 'sliceDepth'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => { updateUIValues(); updateSlice(); });
+        ['planeA', 'planeB', 'planeC', 'planeD', 'planeSide'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('input', () => { updateUIValues(); updateSlice(); });
+            el.addEventListener('change', () => { updateUIValues(); updateSlice(); });
         });
 
         function updateUIValues() {
             document.getElementById('layerVal').innerText = document.getElementById('layerRange').value;
-
-            const xVal = parseFloat(document.getElementById('angleX').value).toFixed(1);
-            const yVal = parseFloat(document.getElementById('angleY').value).toFixed(1);
-            const dVal = parseFloat(document.getElementById('sliceDepth').value).toFixed(1);
-
-            document.getElementById('valX').innerText = xVal + '°';
-            document.getElementById('valY').innerText = yVal + '°';
-            document.getElementById('depthVal').innerText = dVal + '%';
+            const pa = readNum('planeA'), pb = readNum('planeB'), pc = readNum('planeC'), pd = readNum('planeD');
+            const op = document.getElementById('planeSide').value === 'gt' ? '＞' : '＜';
+            const box = document.getElementById('eqText');
+            if (pa === 0 && pb === 0 && pc === 0) {
+                box.innerText = '平面が定まりません（a,b,c を少なくとも1つ非0に）';
+                return;
+            }
+            const term = (id, v) => { const t = coefText(id); return t.startsWith('-') ? ` − ${t.slice(1)}${v}` : ` + ${t}${v}`; };
+            const lhs = (term('planeA', 'x') + term('planeB', 'y') + term('planeC', 'z')).replace(/^ \+ /, '').replace(/^ − /, '−');
+            box.innerText = `平面: ${lhs} = ${coefText('planeD')}　（${op} の側を削る）`;
         }
 
         updateUIValues();
         updateSlice();
 
+        // ===== 初期カメラ：x軸＝右、y軸＝奥、z軸＝上 =====
+        // 三角錐の3辺（LA,LB,LC）がそれぞれ x,y,z 軸。右手系で A×B = C なので、
+        // 「右=A、奥=B、上=C」は矛盾なく成立する。真正面だと奥行きの y 軸が点に潰れるため、
+        // 少しだけ上から見る（角度は下の定数で調整可）。
+        const INIT_AZIMUTH_DEG = 0;     // 右側へ回り込む角度（0 で y軸・z軸が画面上で同じ縦線に揃う）
+        const INIT_ELEVATION_DEG = 25;  // 上から見下ろす角度
+        const INIT_DISTANCE = 18.5;
+        function setInitialCamera() {
+            const ax = LA.clone().normalize(), ay = LB.clone().normalize(), az = LC.clone().normalize();
+            const az_ = INIT_AZIMUTH_DEG * Math.PI / 180, el = INIT_ELEVATION_DEG * Math.PI / 180;
+            const offset = new THREE.Vector3()
+                .addScaledVector(ay, -Math.cos(el) * Math.cos(az_))   // 手前側（y軸の逆）
+                .addScaledVector(ax,  Math.cos(el) * Math.sin(az_))   // 右側
+                .addScaledVector(az,  Math.sin(el))                   // 上側
+                .multiplyScalar(INIT_DISTANCE);
+            camera.up.copy(az);                                       // 画面の上 = z軸方向
+            camera.position.copy(controls.target).add(offset);
+            camera.lookAt(controls.target);
+            controls.update();
+        }
+        setInitialCamera();
+
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            camera.aspect = window.innerWidth / window.innerHeight;
+            applyViewOffset();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            controls.handleResize();
         });
 
         function animate() {
