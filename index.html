@@ -5,10 +5,10 @@
     <title>パスカルの三角錐（直角三角錐）</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #f3f4f6; font-family: sans-serif; }
-        #info { position: absolute; top: 15px; left: 15px; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 8px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 280px; }
+        #info { position: absolute; top: 15px; left: 15px; background: rgba(255,255,255,0.55); backdrop-filter: blur(4px); padding: 15px; border-radius: 8px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 280px; }
         #info h3 { margin: 0 0 5px 0; font-size: 15px; color: #1f2937; }
         #info p { margin: 0; font-size: 12px; color: #4b5563; line-height: 1.4; }
-        #ui-panel { position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.95); padding: 15px 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 8px; width: 360px; }
+        #ui-panel { position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.55); backdrop-filter: blur(4px); padding: 15px 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); display: flex; flex-direction: column; gap: 8px; width: 360px; }
         .control-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
         label { font-size: 12px; font-weight: bold; color: #374151; min-width: 90px; }
         input[type="range"] { flex-grow: 1; margin: 0; }
@@ -16,10 +16,10 @@
         .section-title { font-size: 11px; color: #9ca3af; border-bottom: 1px solid #e5e7eb; margin: 4px 0 2px 0; padding-bottom: 2px; font-weight: bold; }
 
         .eq-input.invalid { border-color: #ef4444; background: #fef2f2; }
-        .eq-input { width: 60px; padding: 4px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 6px; text-align: center; }
+        .eq-input { width: 60px; padding: 4px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 6px; text-align: center; background: rgba(255,255,255,0.7); }
         .eq-label { font-size: 13px; font-weight: bold; color: #374151; }
         .step-btn {
-            background-color: #ffffff;
+            background-color: rgba(255,255,255,0.6);
             border: 1px solid #d1d5db;
             color: #374151;
             font-size: 14px;
@@ -62,13 +62,14 @@
             <input type="text" id="planeD" class="eq-input" value="3" autocomplete="off" spellcheck="false">
         </div>
         <div class="control-row">
-            <label for="planeSide">削る側: </label>
+            <label for="planeSide">うすくする側: </label>
             <select id="planeSide" style="flex-grow:1; padding:3px; font-size:12px;">
-                <option value="gt">ax+by+cz &gt; d の側を削る</option>
-                <option value="lt">ax+by+cz &lt; d の側を削る</option>
+                <option value="gt">ax+by+cz &gt; d の側をうすく</option>
+                <option value="lt">ax+by+cz &lt; d の側をうすく</option>
             </select>
         </div>
         <div id="eqText" style="font-size:12px; color:#2563eb; font-weight:bold; text-align:center;"></div>
+        <div id="planeSum" style="font-size:13px; color:#b91c1c; font-weight:bold; text-align:center;"></div>
         <div style="font-size:11px; color:#6b7280; line-height:1.4;">各頂点 (n, i, j, k) は座標 (x, y, z) = (i, j, k) に対応します。<br>係数は整数・小数・分数（例: 1/2, -3/4, 0.5）で入力できます。<br>例: x=2 → 1,0,0 と d=2 ／ 階層 n → 1,1,1 と d=n ／ x+y=z/2 → 1,1,-1/2, d=0</div>
     </div>
     <script>
@@ -90,7 +91,6 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.localClippingEnabled = true;
         document.body.appendChild(renderer.domElement);
         // TrackballControls：上下の回転制限（真上・真下で止まる制限）がなく、どの向きにも自由に回せる
         const controls = new THREE.TrackballControls(camera, renderer.domElement);
@@ -116,11 +116,13 @@
 
         const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
 
-        const currentPlane = new THREE.Plane();
-
         const spriteCache = {};
         function getCachedSprite(text) {
-            if (spriteCache[text]) return spriteCache[text].clone();
+            if (spriteCache[text]) {
+                const s = spriteCache[text].clone();
+                s.material = s.material.clone(); // 色を個別に変えられるよう独立させる
+                return s;
+            }
             const canvas = document.createElement('canvas');
             canvas.width = 1024; canvas.height = 1024;
             const ctx = canvas.getContext('2d');
@@ -137,7 +139,7 @@
             const texture = new THREE.CanvasTexture(canvas);
             texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter;
             if (maxAnisotropy > 0) texture.anisotropy = maxAnisotropy;
-            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
             const sprite = new THREE.Sprite(spriteMaterial);
             sprite.scale.set(0.45, 0.45, 0.45);
             spriteCache[text] = sprite;
@@ -151,12 +153,31 @@
         scene.add(spriteGroup);
         scene.add(axisGroup);
 
+        // スライス平面を、格子模様＋くっきりした縁取りで見やすくする
+        function makeSliceGridTexture() {
+            const size = 512;
+            const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+            const cx = cv.getContext('2d');
+            cx.fillStyle = 'rgba(239,68,68,0.30)'; cx.fillRect(0, 0, size, size);
+            cx.strokeStyle = 'rgba(255,255,255,0.55)'; cx.lineWidth = 3;
+            const n = 12, step = size / n;
+            for (let i = 1; i < n; i++) {
+                cx.beginPath(); cx.moveTo(i * step, 0); cx.lineTo(i * step, size); cx.stroke();
+                cx.beginPath(); cx.moveTo(0, i * step); cx.lineTo(size, i * step); cx.stroke();
+            }
+            const tex = new THREE.CanvasTexture(cv);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(6, 6);
+            return tex;
+        }
         const slicePlaneGeo = new THREE.PlaneGeometry(1, 1);
-        const slicePlaneMat = new THREE.MeshBasicMaterial({ color: 0xef4444, opacity: 0.16, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+        const slicePlaneMat = new THREE.MeshBasicMaterial({ map: makeSliceGridTexture(), transparent: true, side: THREE.DoubleSide, depthWrite: false });
         const slicePlaneMesh = new THREE.Mesh(slicePlaneGeo, slicePlaneMat);
+        slicePlaneMesh.renderOrder = 1.5; // 三角錐の面より後に描き、埋もれて見えにくくなるのを防ぐ
         const sliceEdges = new THREE.EdgesGeometry(slicePlaneGeo);
-        const sliceLineMat = new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.5 });
+        const sliceLineMat = new THREE.LineBasicMaterial({ color: 0xdc2626, transparent: true, opacity: 0.95, depthTest: false });
         const sliceLine = new THREE.LineSegments(sliceEdges, sliceLineMat);
+        sliceLine.renderOrder = 3; // 縁取りは常に前面に見えるようにする
         scene.add(slicePlaneMesh);
         scene.add(sliceLine);
 
@@ -181,6 +202,11 @@
 
         let currentMaxLayer = -1;
         let sliceRadius = 1;
+        const ON_PLANE_COLOR = 0xef4444;   // 平面上の点をこの色で強調（平面と同じ赤系）
+        const DEFAULT_COLOR = 0xffffff;    // 通常の点の色（白＝元の見た目）
+        const OPACITY_ON_PLANE = 1.0;       // 平面上の点
+        const OPACITY_CUT_SIDE = 0.15;      // 「うすく表示」に選ばれている側の点
+        const OPACITY_KEEP_SIDE = 0.55;     // もう一方の側の点
 
         function rebuildGeometry() {
             const maxLayer = parseInt(document.getElementById('layerRange').value);
@@ -205,9 +231,9 @@
                 const pA = getNodePosition(n, n, 0, 0); const pB = getNodePosition(n, 0, n, 0); const pC = getNodePosition(n, 0, 0, n);
                 const geometry = new THREE.BufferGeometry();
                 geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([pA.x, pA.y, pA.z, pB.x, pB.y, pB.z, pC.x, pC.y, pC.z]), 3));
-                const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x3b82f6, opacity: 0.12, transparent: true, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [currentPlane] }));
+                const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x3b82f6, opacity: 0.12, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
                 meshGroup.add(mesh);
-                const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0.3, clippingPlanes: [currentPlane] }));
+                const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0.3 }));
                 meshGroup.add(line);
             }
 
@@ -223,8 +249,8 @@
                     vTop.x, vTop.y, vTop.z, vBottomC.x, vBottomC.y, vBottomC.z, vBottomA.x, vBottomA.y, vBottomA.z,
                 ]), 3));
                 outerGeometry.computeVertexNormals();
-                meshGroup.add(new THREE.Mesh(outerGeometry, new THREE.MeshPhongMaterial({ color: 0x1d4ed8, opacity: 0.05, transparent: true, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [currentPlane] })));
-                meshGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(outerGeometry), new THREE.LineBasicMaterial({ color: 0x1e4ea8, transparent: true, opacity: 0.3, clippingPlanes: [currentPlane] })));
+                meshGroup.add(new THREE.Mesh(outerGeometry, new THREE.MeshPhongMaterial({ color: 0x1d4ed8, opacity: 0.05, transparent: true, side: THREE.DoubleSide, depthWrite: false })));
+                meshGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(outerGeometry), new THREE.LineBasicMaterial({ color: 0x1e4ea8, transparent: true, opacity: 0.3 })));
             }
 
             // ===== x・y・z 軸（頂点＝原点を中心に、3辺の方向へ薄く表示）=====
@@ -278,6 +304,7 @@
                         const val = trinomial(n, i, j, k);
                         const sprite = getCachedSprite(val.toString());
                         sprite.position.copy(pos);
+                        sprite.userData.i = i; sprite.userData.j = j; sprite.userData.k = k; sprite.userData.val = val;
                         sprite.renderOrder = 2;
                         spriteGroup.add(sprite);
                     }
@@ -328,10 +355,12 @@
                 .divideScalar(spacing * spacing);
             const len = N.length();
 
-            if (len < 1e-9) { // a=b=c=0：平面が定まらないのでスライスなし
+            if (len < 1e-9) { // a=b=c=0：平面が定まらないので全点を通常表示
                 slicePlaneMesh.visible = false; sliceLine.visible = false;
-                currentPlane.set(new THREE.Vector3(0, -1, 0), 1e6);
-                spriteGroup.children.forEach(sprite => { sprite.visible = true; });
+                spriteGroup.children.forEach(sprite => {
+                    sprite.visible = true; sprite.material.color.set(DEFAULT_COLOR); sprite.material.opacity = OPACITY_ON_PLANE;
+                });
+                document.getElementById('planeSum').innerText = '平面上の数の合計: ―';
                 return;
             }
             slicePlaneMesh.visible = true; sliceLine.visible = true;
@@ -347,11 +376,25 @@
             sliceLine.quaternion.copy(q);
             sliceLine.position.copy(slicePlaneMesh.position);
 
-            currentPlane.set(new THREE.Vector3().copy(normal).negate(), constant);
 
+            const EPS = 1e-6;
+            let onPlaneSum = 0;
             spriteGroup.children.forEach(sprite => {
-                sprite.visible = !(sprite.position.dot(normal) > constant + 1e-6);
+                const { i, j, k, val } = sprite.userData;
+                const diff = (pa * i + pb * j + pc * k) - pd; // ax+by+cz-d を格子座標から直接計算（誤差が出にくい）
+                const onPlane = Math.abs(diff) < EPS;
+                sprite.visible = true; // 三角錐は切らないので、点も隠さず常に表示する
+                if (onPlane) {
+                    sprite.material.color.set(ON_PLANE_COLOR);
+                    sprite.material.opacity = OPACITY_ON_PLANE;
+                    onPlaneSum += val;
+                } else {
+                    sprite.material.color.set(DEFAULT_COLOR);
+                    const onFadedSide = removeGreater ? (diff > 0) : (diff < 0);
+                    sprite.material.opacity = onFadedSide ? OPACITY_CUT_SIDE : OPACITY_KEEP_SIDE;
+                }
             });
+            document.getElementById('planeSum').innerText = `平面上の数の合計: ${onPlaneSum}`;
         }
 
         function stepAdjust(id, direction) {
@@ -391,7 +434,7 @@
             }
             const term = (id, v) => { const t = coefText(id); return t.startsWith('-') ? ` − ${t.slice(1)}${v}` : ` + ${t}${v}`; };
             const lhs = (term('planeA', 'x') + term('planeB', 'y') + term('planeC', 'z')).replace(/^ \+ /, '').replace(/^ − /, '−');
-            box.innerText = `平面: ${lhs} = ${coefText('planeD')}　（${op} の側を削る）`;
+            box.innerText = `平面: ${lhs} = ${coefText('planeD')}　（${op} の側をうすく表示）`;
         }
 
         updateUIValues();
