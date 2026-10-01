@@ -16,8 +16,9 @@
         .section-title { font-size: 8px; color: #9ca3af; border-bottom: 1px solid #e5e7eb; margin: 2px 0 1px 0; padding-bottom: 1px; font-weight: bold; }
 
         .eq-input.invalid { border-color: #ef4444; background: #fef2f2; }
-        .eq-input { width: 40px; padding: 2px; font-size: 10px; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; background: rgba(255,255,255,0.7); }
-        .eq-label { font-size: 10px; font-weight: bold; color: #374151; }
+        .eq-input { width: 32px; padding: 1px; font-size: 9px; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; background: rgba(255,255,255,0.7); }
+        .eq-label { font-size: 9px; font-weight: bold; color: #374151; white-space: nowrap; }
+        .eq-row { display: flex; align-items: center; justify-content: center; gap: 2px; flex-wrap: nowrap; overflow-x: auto; }
         .step-btn {
             background-color: rgba(255,255,255,0.6);
             border: 1px solid #d1d5db;
@@ -55,7 +56,7 @@
             <span id="layerVal" class="val-span">5</span>
         </div>
         <div class="section-title">スライス平面の方程式（頂点が原点、3辺が x・y・z 軸）</div>
-        <div class="control-row" style="justify-content:center; gap:4px;">
+        <div class="eq-row">
             <input type="text" id="planeA" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">x +</span>
             <input type="text" id="planeB" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">y +</span>
             <input type="text" id="planeC" class="eq-input" value="1" autocomplete="off" spellcheck="false"><span class="eq-label">z =</span>
@@ -208,6 +209,7 @@
                 invBasis: { value: invBasisMatrix },
                 outsideOpacity: { value: SLICE_OUTSIDE_OPACITY },
                 insideOpacity: { value: SLICE_INSIDE_OPACITY },
+                borderColor: { value: new THREE.Color(0xff0000) },
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -225,6 +227,7 @@
                 uniform mat3 invBasis;
                 uniform float outsideOpacity;
                 uniform float insideOpacity;
+                uniform vec3 borderColor;
                 varying vec2 vUv;
                 varying vec3 vWorldPos;
                 void main() {
@@ -238,7 +241,17 @@
                     float inSum = smoothstep(maxLayer + margin, maxLayer - margin, sum);
                     float inside = inI * inJ * inK * inSum;
                     float alpha = mix(outsideOpacity, insideOpacity, inside) * tex.a;
-                    gl_FragColor = vec4(tex.rgb, alpha);
+
+                    // 三角錐の表面と交わる境界線（切断面の輪郭）を描く。
+                    // 4つの面（i=0, j=0, k=0, i+j+k=maxLayer）までの距離のうち
+                    // 一番近いものが 0 に近いところ＝実際の切り口の輪郭線。
+                    float m = min(min(lat.x, lat.y), min(lat.z, maxLayer - sum));
+                    float borderWidth = 0.012; // 他の枠線と同じくらい細く
+                    float ridge = 1.0 - smoothstep(0.0, borderWidth, abs(m));
+                    vec3 finalColor = mix(tex.rgb, borderColor, ridge);
+                    alpha = max(alpha, ridge * 0.95);
+
+                    gl_FragColor = vec4(finalColor, alpha);
                 }
             `,
             transparent: true,
